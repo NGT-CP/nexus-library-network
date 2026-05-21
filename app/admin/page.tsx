@@ -109,13 +109,65 @@ export default function AdminDashboard() {
     const [manageModal, setManageModal] = useState<ManageModalState>({ studentId: null, student: null });
     const [trialForm, setTrialForm] = useState<TrialFormState>({ days: '' });
     const [cashForm, setCashForm] = useState<CashFormState>({ amount: '', daysValid: '' });
-    const [manageTab, setManageTab] = useState<'status' | 'trial' | 'cash'>('status');
+    const [manageTab, setManageTab] = useState<'status' | 'trial' | 'cash' | 'edit'>('status');
     const [currentSpeeds, setCurrentSpeeds] = useState<Record<number, { upload: string; download: string } | null>>({});
     const [loadingSpeed, setLoadingSpeed] = useState<Record<number, boolean>>({});
+    const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+    const [isLoggingOut, setIsLoggingOut] = useState(false);
+    const [editFormData, setEditFormData] = useState<StudentFormState>(INITIAL_FORM_STATE);
+    const [isEditSubmitting, setIsEditSubmitting] = useState(false);
 
     useEffect(() => {
         fetchStudents();
     }, []);
+
+    const handleLogout = async () => {
+        setIsLoggingOut(true);
+        const { error } = await supabase.auth.signOut();
+        if (!error) {
+            window.location.href = '/';
+        } else {
+            console.error('Logout error:', error);
+            setIsLoggingOut(false);
+        }
+    };
+
+    const handleEditStudent = async () => {
+        if (!manageModal.student) return;
+        setIsEditSubmitting(true);
+
+        const payload = {
+            name: editFormData.name.trim(),
+            phone: editFormData.phone,
+            email: editFormData.email.trim() || null,
+            target_exam: editFormData.target_exam.trim() || null,
+            emergency_contact: editFormData.emergency_contact || null,
+            address: editFormData.address.trim() || null,
+        };
+
+        const { error } = await supabase
+            .from('students')
+            .update(payload)
+            .eq('id', manageModal.student.id);
+
+        if (error) {
+            alert('Error updating student: ' + error.message);
+            setIsEditSubmitting(false);
+            return;
+        }
+
+        // TODO: If phone number changed, sync with MikroTik RouterOS API
+        // Call MikroTik API to update username/password on the physical router
+        // const phoneChanged = manageModal.student.phone !== editFormData.phone;
+        // if (phoneChanged) {
+        //   await updateMikrotikUser(manageModal.student.phone, editFormData.phone, editFormData.speed_limit);
+        // }
+
+        alert('Student profile updated successfully!');
+        await fetchStudents();
+        setManageModal({ studentId: null, student: null });
+        setIsEditSubmitting(false);
+    };
 
     const fetchStudents = async () => {
         setLoading(true);
@@ -328,6 +380,7 @@ export default function AdminDashboard() {
         setManageModal({ studentId: null, student: null });
         setTrialForm({ days: '' });
         setCashForm({ amount: '', daysValid: '' });
+        setEditFormData(INITIAL_FORM_STATE);
         setManageTab('status');
     };
 
@@ -359,12 +412,23 @@ export default function AdminDashboard() {
                             </div>
                             <p className="text-gray-400 text-sm font-light">Network & Student Management</p>
                         </div>
-                        <button
-                            onClick={handleOpenModal}
-                            className="bg-gradient-to-r from-orange-500 to-blue-600 hover:from-orange-400 hover:to-blue-500 text-black font-bold px-6 py-2.5 rounded-lg transition-smooth shadow-lg shadow-orange-500/50 hover:shadow-orange-400/50 hover:scale-105 active:scale-95 uppercase tracking-wider text-sm"
-                        >
-                            + New Student
-                        </button>
+                        <div className="flex gap-3 w-full sm:w-auto">
+                            <button
+                                onClick={handleOpenModal}
+                                className="flex-1 sm:flex-none bg-gradient-to-r from-orange-500 to-blue-600 hover:from-orange-400 hover:to-blue-500 text-black font-bold px-6 py-2.5 rounded-lg transition-smooth shadow-lg shadow-orange-500/50 hover:shadow-orange-400/50 hover:scale-105 active:scale-95 uppercase tracking-wider text-sm"
+                            >
+                                + New Student
+                            </button>
+                            <button
+                                onClick={() => setShowLogoutConfirm(true)}
+                                className="flex-1 sm:flex-none bg-red-500/20 hover:bg-red-500/30 text-red-300 hover:text-red-200 font-bold px-6 py-2.5 rounded-lg transition-smooth shadow-lg shadow-red-500/20 hover:shadow-red-500/40 hover:scale-105 active:scale-95 uppercase tracking-wider text-sm border border-red-500/40 hover:border-red-500/60 flex items-center justify-center gap-2"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                                </svg>
+                                Logout
+                            </button>
+                        </div>
                     </div>
 
                     {successMessage && (
@@ -685,6 +749,27 @@ export default function AdminDashboard() {
                                     >
                                         Add Subscription
                                     </button>
+                                    <button
+                                        onClick={() => {
+                                            setManageTab('edit');
+                                            setEditFormData({
+                                                name: manageModal.student?.name || '',
+                                                phone: manageModal.student?.phone || '',
+                                                email: '',
+                                                target_exam: '',
+                                                emergency_contact: '',
+                                                address: '',
+                                                speed_limit: manageModal.student?.speed_limit || '12M',
+                                            });
+                                        }}
+                                        className={`px-4 py-2 text-sm font-semibold uppercase tracking-wider rounded-lg transition-smooth ${
+                                            manageTab === 'edit'
+                                                ? 'bg-purple-500/30 text-purple-300 border border-purple-500/50'
+                                                : 'bg-slate-800/50 text-slate-400 hover:bg-slate-800'
+                                        }`}
+                                    >
+                                        Edit Profile
+                                    </button>
                                 </div>
 
                                 {/* Status & Speed Tab */}
@@ -815,6 +900,110 @@ export default function AdminDashboard() {
                                         </div>
                                     </div>
                                 )}
+
+                                {/* Edit Profile Tab */}
+                                {manageTab === 'edit' && (
+                                    <div className="bg-slate-800/50 border border-slate-700/60 rounded-xl p-6">
+                                        <p className="font-semibold text-white mb-4">Edit Student Profile</p>
+                                        <div className="space-y-4">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="block text-xs font-semibold uppercase tracking-widest text-slate-300 mb-2">Name</label>
+                                                    <input
+                                                        type="text"
+                                                        value={editFormData.name}
+                                                        onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                                                        className="w-full rounded-lg border border-slate-600 bg-slate-800/70 px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-purple-400 focus:border-purple-400"
+                                                        placeholder="Student name"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-semibold uppercase tracking-widest text-slate-300 mb-2">Phone</label>
+                                                    <input
+                                                        type="tel"
+                                                        value={editFormData.phone}
+                                                        onChange={(e) => {
+                                                            const digitsOnly = e.target.value.replace(/\D/g, '').slice(0, 10);
+                                                            setEditFormData({ ...editFormData, phone: digitsOnly });
+                                                        }}
+                                                        maxLength={10}
+                                                        className="w-full rounded-lg border border-slate-600 bg-slate-800/70 px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-purple-400 focus:border-purple-400"
+                                                        placeholder="10 digit phone"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-semibold uppercase tracking-widest text-slate-300 mb-2">Email</label>
+                                                    <input
+                                                        type="email"
+                                                        value={editFormData.email}
+                                                        onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                                                        className="w-full rounded-lg border border-slate-600 bg-slate-800/70 px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-purple-400 focus:border-purple-400"
+                                                        placeholder="student@email.com"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-semibold uppercase tracking-widest text-slate-300 mb-2">Target Exam</label>
+                                                    <input
+                                                        type="text"
+                                                        value={editFormData.target_exam}
+                                                        onChange={(e) => setEditFormData({ ...editFormData, target_exam: e.target.value })}
+                                                        className="w-full rounded-lg border border-slate-600 bg-slate-800/70 px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-purple-400 focus:border-purple-400"
+                                                        placeholder="UPSC, SSC, NEET..."
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-semibold uppercase tracking-widest text-slate-300 mb-2">Emergency Contact</label>
+                                                    <input
+                                                        type="tel"
+                                                        value={editFormData.emergency_contact}
+                                                        onChange={(e) => {
+                                                            const digitsOnly = e.target.value.replace(/\D/g, '').slice(0, 10);
+                                                            setEditFormData({ ...editFormData, emergency_contact: digitsOnly });
+                                                        }}
+                                                        maxLength={10}
+                                                        className="w-full rounded-lg border border-slate-600 bg-slate-800/70 px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-purple-400 focus:border-purple-400"
+                                                        placeholder="10 digit phone"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-semibold uppercase tracking-widest text-slate-300 mb-2">Speed Limit</label>
+                                                    <input
+                                                        type="text"
+                                                        value={editFormData.speed_limit}
+                                                        onChange={(e) => setEditFormData({ ...editFormData, speed_limit: e.target.value })}
+                                                        className="w-full rounded-lg border border-slate-600 bg-slate-800/70 px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-purple-400 focus:border-purple-400"
+                                                        placeholder="e.g. 12M"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-xs font-semibold uppercase tracking-widest text-slate-300 mb-2">Address</label>
+                                                <textarea
+                                                    value={editFormData.address}
+                                                    onChange={(e) => setEditFormData({ ...editFormData, address: e.target.value })}
+                                                    rows={3}
+                                                    className="w-full rounded-lg border border-slate-600 bg-slate-800/70 px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-purple-400 focus:border-purple-400"
+                                                    placeholder="Optional address"
+                                                />
+                                            </div>
+
+                                            <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 text-xs text-blue-200">
+                                                <p className="font-semibold text-blue-300 mb-1">⚠️ Important</p>
+                                                <p>If you change the phone number, the MikroTik router will need to be updated with the new credentials.</p>
+                                                {/* TODO: Implement MikroTik phone sync when phone number changes */}
+                                            </div>
+
+                                            <button
+                                                onClick={handleEditStudent}
+                                                disabled={isEditSubmitting || !editFormData.name || !/^\d{10}$/.test(editFormData.phone)}
+                                                className="w-full rounded-lg bg-gradient-to-r from-purple-500 to-pink-600 px-5 py-2.5 text-sm font-bold text-black shadow-lg shadow-purple-500/40 hover:from-purple-400 hover:to-pink-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                                            >
+                                                {isEditSubmitting ? 'Saving...' : 'Save Changes'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -822,6 +1011,49 @@ export default function AdminDashboard() {
                 <div className="mt-8 text-center text-xs text-gray-500 font-light">
                     System Status • Real-time Sync • Secure Access
                 </div>
+
+                {/* Logout Confirmation Modal */}
+                {showLogoutConfirm && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-md px-4">
+                        <div className="w-full max-w-sm rounded-2xl border border-red-500/40 bg-slate-900/95 shadow-2xl shadow-red-950/50 backdrop-blur-xl animate-scale-in">
+                            <div className="px-6 py-8 text-center">
+                                <div className="mb-4 flex justify-center">
+                                    <div className="rounded-full bg-red-500/20 p-3 border border-red-500/40">
+                                        <svg className="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                                        </svg>
+                                    </div>
+                                </div>
+                                <h3 className="text-lg font-bold text-white mb-2">Sign Out?</h3>
+                                <p className="text-sm text-gray-400 mb-6">You will be logged out and redirected to the login page.</p>
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={() => setShowLogoutConfirm(false)}
+                                        className="flex-1 rounded-lg border border-slate-600 bg-slate-800/50 hover:bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-200 transition-smooth"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handleLogout}
+                                        disabled={isLoggingOut}
+                                        className="flex-1 rounded-lg bg-gradient-to-r from-red-500 to-red-600 hover:from-red-400 hover:to-red-500 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-red-500/40 hover:shadow-red-400/50 disabled:opacity-60 disabled:cursor-not-allowed transition-smooth flex items-center justify-center gap-2"
+                                    >
+                                        {isLoggingOut ? (
+                                            <>
+                                                <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                                </svg>
+                                                Signing out...
+                                            </>
+                                        ) : (
+                                            'Yes, Sign Out'
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

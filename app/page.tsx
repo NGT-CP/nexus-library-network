@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, Suspense } from 'react';
+import { useState, Suspense, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useSearchParams } from 'next/navigation';
+import { verifyStudentAccess } from './actions';
 
 function LoginFormContent() {
   const searchParams = useSearchParams();
+  const formRef = useRef<HTMLFormElement>(null);
   const [loginType, setLoginType] = useState<'student' | 'admin'>('student');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
@@ -14,48 +16,45 @@ function LoginFormContent() {
   const [message, setMessage] = useState({ text: '', type: '' });
 
   const macAddress = searchParams.get('mac');
-  const mikrotikLoginUrl = searchParams.get('link-login');
+  const linkLogin = searchParams.get('link-login');
+
+  // Validate link-login URL is HTTPS in production
+  const isValidLoginUrl = (url: string | null) => {
+    if (!url) return false;
+    try {
+      const parsed = new URL(url);
+      if (process.env.NODE_ENV === 'production') {
+        return parsed.protocol === 'https:';
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  };
 
   const handleStudentLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setMessage({ text: '', type: '' });
 
-    const { data: student, error } = await supabase
-      .from('students')
-      .select('id, name, is_blocked')
-      .eq('phone', phone)
-      .single();
+    // Call the secure Server Action
+    const result = await verifyStudentAccess(phone);
 
-    if (error || !student) {
-      setMessage({ text: 'Phone number not found.', type: 'error' });
+    if (!result.success) {
+      setMessage({ text: result.error, type: 'error' });
       setLoading(false);
       return;
     }
 
-    if (student.is_blocked) {
-      setMessage({ text: 'Access Denied.', type: 'error' });
-      setLoading(false);
-      return;
-    }
+    setMessage({ text: 'Access verified! Connecting to network...', type: 'success' });
 
-    setMessage({ text: `Welcome back, ${student.name}! Unlocking internet...`, type: 'success' });
-
-    if (mikrotikLoginUrl) {
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = mikrotikLoginUrl;
-
-      const userField = document.createElement('input');
-      userField.type = 'hidden';
-      userField.name = 'username';
-      userField.value = phone;
-
-      form.appendChild(userField);
-      document.body.appendChild(form);
-      form.submit();
+    // If MikroTik URL exists, submit the hidden form
+    if (linkLogin && isValidLoginUrl(linkLogin) && formRef.current) {
+      setTimeout(() => {
+        formRef.current?.submit();
+      }, 500);
     } else {
-      setMessage({ text: 'Testing Mode: DB check passed, but no router detected.', type: 'success' });
+      setMessage({ text: 'Testing Mode: DB verification passed! (No router URL detected)', type: 'success' });
     }
 
     setLoading(false);
@@ -198,6 +197,12 @@ function LoginFormContent() {
             </p>
           </div>
         )}
+
+        {/* Hidden MikroTik form - this submits credentials to the router */}
+        <form ref={formRef} action={linkLogin || ''} method="POST" className="hidden">
+          <input type="hidden" name="username" value={phone} />
+          <input type="hidden" name="password" value={phone} />
+        </form>
       </div>
 
       <div className="text-center text-xs text-gray-500 mt-6 font-light">
