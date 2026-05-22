@@ -2,10 +2,11 @@
 
 import { useState, Suspense, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { verifyStudentAccess } from './actions';
 
 function LoginFormContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const formRef = useRef<HTMLFormElement>(null);
   const [loginType, setLoginType] = useState<'student' | 'admin'>('student');
@@ -17,6 +18,32 @@ function LoginFormContent() {
 
   const macAddress = searchParams.get('mac');
   const linkLogin = searchParams.get('link-login');
+  const demoBypass = searchParams.get('demo') === 'true';
+
+  // Demo mode - allow direct access to dashboard
+  if (demoBypass && process.env.NEXT_PUBLIC_DEMO_MODE === 'true') {
+    return (
+      <div className="w-full max-w-md">
+        <div className="backdrop-blur-xl bg-black/30 border border-cyan-500/20 rounded-2xl shadow-2xl p-8 sm:p-10 hover:border-cyan-500/40 transition-smooth animate-fade-in-up">
+          <div className="text-center mb-8">
+            <div className="mb-6 flex justify-center">
+              <div className="text-4xl font-black bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+                DEMO MODE
+              </div>
+            </div>
+            <p className="text-cyan-300 font-light tracking-wider text-sm">Direct Dashboard Access</p>
+          </div>
+
+          <button
+            onClick={() => router.push('/dashboard')}
+            className="w-full text-black font-bold py-3 rounded-lg transition-smooth duration-300 shadow-lg hover:scale-105 active:scale-95 uppercase tracking-wider text-sm bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-400 hover:to-purple-500 shadow-cyan-500/50 hover:shadow-cyan-400/50"
+          >
+            Enter Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Validate link-login URL is HTTPS in production
   const isValidLoginUrl = (url: string | null) => {
@@ -37,8 +64,12 @@ function LoginFormContent() {
     setLoading(true);
     setMessage({ text: '', type: '' });
 
+    console.log('Login attempt with phone:', phone);
+
     // Call the secure Server Action
     const result = await verifyStudentAccess(phone);
+
+    console.log('Verify result:', result);
 
     if (!result.success) {
       setMessage({ text: result.error, type: 'error' });
@@ -46,7 +77,8 @@ function LoginFormContent() {
       return;
     }
 
-    setMessage({ text: 'Access verified! Connecting to network...', type: 'success' });
+    setMessage({ text: 'Access verified! Redirecting to dashboard...', type: 'success' });
+    console.log('Redirecting to dashboard...');
 
     // If MikroTik URL exists, submit the hidden form
     if (linkLogin && isValidLoginUrl(linkLogin) && formRef.current) {
@@ -54,7 +86,11 @@ function LoginFormContent() {
         formRef.current?.submit();
       }, 500);
     } else {
-      setMessage({ text: 'Testing Mode: DB verification passed! (No router URL detected)', type: 'success' });
+      // Redirect to dashboard when no router URL
+      setTimeout(() => {
+        console.log('Performing redirect to /dashboard');
+        router.push('/dashboard');
+      }, 500);
     }
 
     setLoading(false);
@@ -65,7 +101,7 @@ function LoginFormContent() {
     setLoading(true);
     setMessage({ text: '', type: '' });
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { error, data } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
     });
@@ -76,11 +112,17 @@ function LoginFormContent() {
       return;
     }
 
+    if (!data.session) {
+      setMessage({ text: 'Login successful but session not created. Please try again.', type: 'error' });
+      setLoading(false);
+      return;
+    }
+
     setMessage({ text: 'Authentication successful! Redirecting...', type: 'success' });
 
     setTimeout(() => {
       window.location.href = '/admin';
-    }, 800);
+    }, 1000);
 
     setLoading(false);
   };

@@ -1,5 +1,6 @@
 'use server';
 import { createClient } from '@supabase/supabase-js';
+import { cookies } from 'next/headers';
 
 type VerifyResult =
   | { success: true }
@@ -8,8 +9,26 @@ type VerifyResult =
 export async function verifyStudentAccess(phone: string): Promise<VerifyResult> {
   // Sanitize & validate phone: exactly 10 digits
   const sanitized = phone.replace(/\D/g, '');
+  console.log('[LOGIN] Sanitized phone:', sanitized);
+
   if (sanitized.length !== 10) {
     return { success: false, error: 'Please enter exactly 10 digits.' };
+  }
+
+  // Demo mode - skip DB check
+  if (process.env.DEMO_MODE === 'true') {
+    console.log('[DEMO MODE] Demo mode enabled, setting cookie for phone:', sanitized);
+
+    const cookieStore = await cookies();
+    cookieStore.set('student_phone', sanitized, {
+      httpOnly: false,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 86400 * 7, // 7 days
+    });
+
+    console.log('[DEMO MODE] Cookie set successfully');
+    return { success: true };
   }
 
   // We MUST use the Service Role Key here because the student isn't logged in yet,
@@ -32,6 +51,15 @@ export async function verifyStudentAccess(phone: string): Promise<VerifyResult> 
   if (student.is_blocked) {
     return { success: false, error: 'Access denied. Please contact the admin.' };
   }
+
+  // Store phone in cookie
+  const cookieStore = await cookies();
+  cookieStore.set('student_phone', sanitized, {
+    httpOnly: false,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 86400 * 7, // 7 days
+  });
 
   return { success: true };
 }
