@@ -18,6 +18,7 @@ type StudentProfile = {
 export default function StudentProfile() {
   const [student, setStudent] = useState<StudentProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -29,18 +30,19 @@ export default function StudentProfile() {
       const { data: { session } } = await supabase.auth.getSession();
 
       if (!session?.user?.phone) {
+        setError('Unable to verify your identity. Please log in again.');
         setLoading(false);
         return;
       }
 
-      const { data, error } = await supabase
+      const { data, error: fetchError } = await supabase
         .from('students')
         .select('id, name, phone, email, target_exam, speed_limit, address, created_at')
         .eq('phone', session.user.phone)
         .single();
 
-      if (error) {
-        console.error('Error fetching profile:', error);
+      if (fetchError) {
+        setError('Failed to load your profile. Please refresh the page.');
       } else {
         setStudent(data);
       }
@@ -60,9 +62,28 @@ export default function StudentProfile() {
     );
   }
 
+  if (error) {
+    return (
+      <div className="backdrop-blur-xl bg-red-500/10 border border-red-500/30 rounded-2xl p-6 text-center animate-scale-in">
+        <div className="flex justify-center mb-3">
+          <svg className="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4v2m0 4v2m0-16a9 9 0 110 18 9 9 0 010-18z" />
+          </svg>
+        </div>
+        <p className="text-red-300 font-semibold mb-2">{error}</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="mt-3 px-4 py-2 bg-red-500/30 hover:bg-red-500/40 text-red-300 hover:text-red-200 rounded-lg text-sm font-semibold transition-smooth"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
   if (!student) {
     return (
-      <div className="backdrop-blur-xl bg-black/40 border border-red-500/20 rounded-2xl p-6 text-center">
+      <div className="backdrop-blur-xl bg-red-500/10 border border-red-500/30 rounded-2xl p-6 text-center animate-scale-in">
         <p className="text-red-300">Unable to load profile information</p>
       </div>
     );

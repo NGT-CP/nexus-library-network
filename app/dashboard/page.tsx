@@ -1,6 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
+import { getStudentSession, getStudentData } from './actions';
+import AttendanceCalendar from './attendance-client';
+import StudentProfile from './profile-client';
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<'attendance' | 'profile'>('attendance');
@@ -34,34 +37,29 @@ export default function DashboardPage() {
       {/* Tab Content */}
       <div className="animate-fade-in-up">
         {activeTab === 'attendance' && (
-          <div className="backdrop-blur-xl bg-black/40 border border-cyan-500/20 rounded-2xl p-8">
-            <h2 className="text-2xl font-bold text-cyan-300 mb-4">Attendance Calendar</h2>
-            <p className="text-gray-400">Demo - Attendance tracking UI</p>
-          </div>
+          <Suspense
+            fallback={
+              <div className="backdrop-blur-xl bg-black/40 border border-cyan-500/20 rounded-2xl p-12 text-center">
+                <div className="w-8 h-8 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                <p className="text-cyan-300 text-sm">Loading calendar...</p>
+              </div>
+            }
+          >
+            <AttendanceCalendar />
+          </Suspense>
         )}
 
         {activeTab === 'profile' && (
-          <div className="backdrop-blur-xl bg-black/40 border border-emerald-500/20 rounded-2xl p-8">
-            <h2 className="text-2xl font-bold text-emerald-300 mb-4">My Profile</h2>
-            <div className="space-y-4 text-gray-300">
-              <div>
-                <p className="text-sm text-gray-500">Name</p>
-                <p className="text-lg font-semibold">Demo Student</p>
+          <Suspense
+            fallback={
+              <div className="backdrop-blur-xl bg-black/40 border border-emerald-500/20 rounded-2xl p-12 text-center">
+                <div className="w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                <p className="text-emerald-300 text-sm">Loading profile...</p>
               </div>
-              <div>
-                <p className="text-sm text-gray-500">Phone</p>
-                <p className="text-lg font-semibold">1234567890</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">Target Exam</p>
-                <p className="text-lg font-semibold">NEET</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">Speed Limit</p>
-                <p className="text-lg font-semibold">10 Mbps</p>
-              </div>
-            </div>
-          </div>
+            }
+          >
+            <StudentProfile />
+          </Suspense>
         )}
       </div>
     </div>

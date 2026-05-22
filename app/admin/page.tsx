@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { addMikrotikUser, getMikrotikUserSpeed } from '../lib/mikrotik';
+import AnimatedNotification from '../../components/AnimatedNotification';
 
 type Device = {
     id: number;
@@ -116,9 +117,18 @@ export default function AdminDashboard() {
     const [isLoggingOut, setIsLoggingOut] = useState(false);
     const [editFormData, setEditFormData] = useState<StudentFormState>(INITIAL_FORM_STATE);
     const [isEditSubmitting, setIsEditSubmitting] = useState(false);
+    const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
 
     useEffect(() => {
-        fetchStudents();
+        const checkAuth = async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) {
+                window.location.href = '/';
+                return;
+            }
+            fetchStudents();
+        };
+        checkAuth();
     }, []);
 
     const handleLogout = async () => {
@@ -127,7 +137,7 @@ export default function AdminDashboard() {
         if (!error) {
             window.location.href = '/';
         } else {
-            console.error('Logout error:', error);
+            setNotification({ type: 'error', message: 'Failed to logout. Please try again.' });
             setIsLoggingOut(false);
         }
     };
@@ -151,7 +161,7 @@ export default function AdminDashboard() {
             .eq('id', manageModal.student.id);
 
         if (error) {
-            alert('Error updating student: ' + error.message);
+            setNotification({ type: 'error', message: 'Error updating student profile. Please try again.' });
             setIsEditSubmitting(false);
             return;
         }
@@ -163,10 +173,11 @@ export default function AdminDashboard() {
         //   await updateMikrotikUser(manageModal.student.phone, editFormData.phone, editFormData.speed_limit);
         // }
 
-        alert('Student profile updated successfully!');
+        setNotification({ type: 'success', message: 'Student profile updated successfully!' });
         await fetchStudents();
         setManageModal({ studentId: null, student: null });
         setIsEditSubmitting(false);
+        setTimeout(() => setNotification(null), 4000);
     };
 
     const fetchStudents = async () => {
@@ -177,7 +188,7 @@ export default function AdminDashboard() {
             .order('id', { ascending: false });
 
         if (error) {
-            console.error('Error fetching students:', error);
+            setNotification({ type: 'error', message: 'Failed to load students. Please refresh the page.' });
         } else {
             setStudents(data || []);
         }
@@ -254,9 +265,9 @@ export default function AdminDashboard() {
         );
 
         if (!mikrotikResult.success) {
-            console.warn(
-                `Student added to database but MikroTik sync failed: ${mikrotikResult.error}`
-            );
+            setNotification({ type: 'error', message: `Student added but router sync failed: ${mikrotikResult.error}` });
+        } else {
+            setSuccessMessage('Student added successfully.');
         }
 
         handleCloseModal();
@@ -276,15 +287,17 @@ export default function AdminDashboard() {
             .eq('id', manageModal.student.id);
 
         if (error) {
-            console.error('Failed to update block status:', error);
+            setNotification({ type: 'error', message: 'Failed to update student status. Please try again.' });
             return;
         }
 
         // TODO: Sync with MikroTik RouterOS to block/unblock user on the physical router
         // Call appropriate MikroTik function to update user status
 
+        setNotification({ type: 'success', message: newBlockStatus ? 'Student blocked successfully.' : 'Student unblocked successfully.' });
         await fetchStudents();
         setManageModal({ studentId: null, student: null });
+        setTimeout(() => setNotification(null), 3000);
     };
 
     const handleChangeSpeed = async (newSpeed: string) => {
@@ -296,15 +309,17 @@ export default function AdminDashboard() {
             .eq('id', manageModal.student.id);
 
         if (error) {
-            console.error('Failed to update speed limit:', error);
+            setNotification({ type: 'error', message: 'Failed to update speed limit. Please try again.' });
             return;
         }
 
         // TODO: Sync with MikroTik RouterOS to update rate-limit rules for this user
         // Call addMikrotikUser or similar function with new speed_limit
 
+        setNotification({ type: 'success', message: `Speed limit updated to ${newSpeed}` });
         await fetchStudents();
         setManageModal({ ...manageModal, student: { ...manageModal.student, speed_limit: newSpeed } });
+        setTimeout(() => setNotification(null), 3000);
     };
 
     const handleGrantTrial = async () => {
@@ -312,7 +327,7 @@ export default function AdminDashboard() {
 
         const days = parseInt(trialForm.days);
         if (isNaN(days) || days <= 0) {
-            alert('Please enter a valid number of days');
+            setNotification({ type: 'error', message: 'Please enter a valid number of days' });
             return;
         }
 
@@ -331,13 +346,14 @@ export default function AdminDashboard() {
             }]);
 
         if (error) {
-            console.error('Failed to grant trial:', error);
+            setNotification({ type: 'error', message: 'Failed to grant trial. Please try again.' });
             return;
         }
 
+        setNotification({ type: 'success', message: `Trial granted for ${days} days` });
         setTrialForm({ days: '' });
-        alert(`Trial granted for ${days} days`);
         setManageTab('status');
+        setTimeout(() => setNotification(null), 3000);
     };
 
     const handleAddCashSubscription = async () => {
@@ -347,7 +363,7 @@ export default function AdminDashboard() {
         const daysValid = parseInt(cashForm.daysValid);
 
         if (isNaN(amount) || amount <= 0 || isNaN(daysValid) || daysValid <= 0) {
-            alert('Please enter valid amounts');
+            setNotification({ type: 'error', message: 'Please enter valid amounts' });
             return;
         }
 
@@ -372,8 +388,9 @@ export default function AdminDashboard() {
         }
 
         setCashForm({ amount: '', daysValid: '' });
-        alert(`Subscription added for ₹${amount}`);
+        setNotification({ type: 'success', message: `Subscription added for ₹${amount}` });
         setManageTab('status');
+        setTimeout(() => setNotification(null), 3000);
     };
 
     const handleCloseManageModal = () => {
@@ -395,6 +412,15 @@ export default function AdminDashboard() {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-black via-blue-950 to-black text-white p-6 sm:p-8 relative overflow-hidden">
+            {/* Animated Notification */}
+            {notification && (
+                <AnimatedNotification
+                    message={notification.message}
+                    type={notification.type}
+                    onClose={() => setNotification(null)}
+                />
+            )}
+
             {/* Background Effects */}
             <div className="absolute inset-0 overflow-hidden pointer-events-none">
                 <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full mix-blend-screen filter blur-3xl opacity-30 animate-float"></div>

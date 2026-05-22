@@ -1,12 +1,49 @@
+import { getStudentSession, getStudentData } from './actions';
 import { Suspense, ReactNode } from 'react';
 
 interface DashboardLayoutProps {
   children: ReactNode;
 }
 
-export default function DashboardLayout({ children }: DashboardLayoutProps) {
-  console.log('[DASHBOARD LAYOUT] Rendering...');
+async function StudentHeader() {
+  const session = await getStudentSession();
 
+  if (!session) {
+    return null;
+  }
+
+  const student = await getStudentData(session.user.email || '');
+
+  if (!student) {
+    return null;
+  }
+
+  const nameInitial = student.name.charAt(0).toUpperCase();
+  const gradientColors = [
+    'from-cyan-400 to-blue-600',
+    'from-orange-400 to-pink-600',
+    'from-emerald-400 to-teal-600',
+    'from-purple-400 to-pink-600',
+  ];
+  const gradientIndex = student.id % gradientColors.length;
+  const gradient = gradientColors[gradientIndex];
+
+  return (
+    <div className="flex justify-between items-center mb-8 animate-slide-in-down">
+      <div>
+        <h1 className="text-3xl font-black bg-gradient-to-r from-blue-400 via-cyan-400 to-emerald-400 bg-clip-text text-transparent mb-1">
+          Welcome, {student.name}
+        </h1>
+        <p className="text-gray-400 text-sm font-light">Student Dashboard</p>
+      </div>
+      <div className={`w-14 h-14 rounded-full bg-gradient-to-br ${gradient} flex items-center justify-center text-white font-bold text-xl shadow-lg`}>
+        {nameInitial}
+      </div>
+    </div>
+  );
+}
+
+export default function DashboardLayout({ children }: DashboardLayoutProps) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-black via-purple-950 to-black text-white p-6 sm:p-8 relative overflow-hidden">
       {/* Background Effects */}
@@ -17,17 +54,16 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       </div>
 
       <div className="max-w-4xl mx-auto relative z-10">
-        <div className="flex justify-between items-center mb-8 animate-slide-in-down">
-          <div>
-            <h1 className="text-3xl font-black bg-gradient-to-r from-blue-400 via-cyan-400 to-emerald-400 bg-clip-text text-transparent mb-1">
-              Welcome, Demo Student
-            </h1>
-            <p className="text-gray-400 text-sm font-light">Student Dashboard</p>
-          </div>
-          <div className="w-14 h-14 rounded-full bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center text-white font-bold text-xl shadow-lg">
-            D
-          </div>
-        </div>
+        <Suspense
+          fallback={
+            <div className="text-center animate-fade-in">
+              <div className="w-10 h-10 border-2 border-cyan-400 border-t-emerald-400 rounded-full animate-spin mx-auto mb-3"></div>
+              <p className="text-cyan-300 text-sm font-light">Loading your dashboard...</p>
+            </div>
+          }
+        >
+          <StudentHeader />
+        </Suspense>
 
         {children}
       </div>
