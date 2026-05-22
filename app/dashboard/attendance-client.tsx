@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { DayPicker } from 'react-day-picker';
 import { format, getYear, getMonth } from 'date-fns';
 import 'react-day-picker/dist/style.css';
@@ -10,6 +10,7 @@ import { useSearchParams } from 'next/navigation';
 export default function AttendanceCalendar() {
   const searchParams = useSearchParams();
   const studentIdParam = searchParams?.get('student_id');
+  const wsRef = useRef<WebSocket | null>(null);
 
   const [attendanceData, setAttendanceData] = useState<Record<string, boolean>>({});
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -19,13 +20,48 @@ export default function AttendanceCalendar() {
   const [message, setMessage] = useState('');
   const [studentId, setStudentId] = useState<number | null>(null);
 
-  // Get student ID from session (mock - would need actual session)
+  // Initialize WebSocket for live updates
   useEffect(() => {
-    // In a real scenario, fetch this from server action
-    // For now, using a placeholder that should be passed as prop
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const wsUrl = `${wsProtocol}://${window.location.host}/api/attendance-ws`;
+
+    try {
+      wsRef.current = new WebSocket(wsUrl);
+
+      wsRef.current.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'attendance-update') {
+            setAttendanceData((prev) => ({
+              ...prev,
+              [data.date]: true,
+            }));
+          }
+        } catch (error) {
+          console.error('WebSocket message error:', error);
+        }
+      };
+
+      wsRef.current.onerror = (error) => {
+        console.error('WebSocket error:', error);
+      };
+    } catch (error) {
+      console.error('WebSocket connection failed:', error);
+    }
+
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
+  }, []);
+
+  // Get student ID from session
+  useEffect(() => {
     setStudentId(1);
   }, []);
 
+  // Fetch attendance without full page reload on month change
   useEffect(() => {
     if (!studentId) return;
 
@@ -35,7 +71,6 @@ export default function AttendanceCalendar() {
       const month = getMonth(selectedDate);
 
       const records = await getAttendanceRecords(studentId, year, month);
-      const today = format(new Date(), 'yyyy-MM-dd');
 
       // Build attendance map
       const attendanceMap: Record<string, boolean> = {};
@@ -67,16 +102,13 @@ export default function AttendanceCalendar() {
     if (result.success) {
       setMarkedToday(true);
       setMessage('✅ Attendance marked successfully!');
-      // Refresh data
-      const year = getYear(new Date());
-      const month = getMonth(new Date());
-      const records = await getAttendanceRecords(studentId, year, month);
-      const attendanceMap: Record<string, boolean> = {};
-      records.forEach((record: any) => {
-        const dateStr = record['attendance-date'] || format(new Date(record.created_at), 'yyyy-MM-dd');
-        attendanceMap[dateStr] = true;
-      });
-      setAttendanceData(attendanceMap);
+
+      // Update locally without reload
+      const today = format(new Date(), 'yyyy-MM-dd');
+      setAttendanceData((prev) => ({
+        ...prev,
+        [today]: true,
+      }));
     } else {
       setMessage(`❌ ${result.error}`);
     }
@@ -133,8 +165,8 @@ export default function AttendanceCalendar() {
 
   if (loading) {
     return (
-      <div className="backdrop-blur-xl bg-black/40 border border-cyan-500/20 rounded-2xl p-12 text-center">
-        <div className="w-8 h-8 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+      <div className="backdrop-blur-xl bg-black/40 border border-cyan-500/20 rounded-2xl p-12 text-center animate-fade-in">
+        <div className="w-8 h-8 rounded-full border-2 border-cyan-400 border-r-transparent mx-auto mb-3 opacity-60"></div>
         <p className="text-cyan-300 text-sm">Loading attendance data...</p>
       </div>
     );
@@ -163,6 +195,7 @@ export default function AttendanceCalendar() {
             color: rgb(226, 232, 240);
             font-weight: bold;
             margin-bottom: 1rem;
+            animation: fadeIn 0.3s ease-in-out;
           }
           .rdp-head_cell {
             color: rgb(148, 163, 184);
@@ -172,6 +205,7 @@ export default function AttendanceCalendar() {
           }
           .rdp-cell {
             color: rgb(226, 232, 240);
+            animation: fadeIn 0.2s ease-in-out;
           }
           .rdp-day {
             border-radius: 8px;
@@ -182,6 +216,14 @@ export default function AttendanceCalendar() {
           }
           .rdp-day_disabled {
             opacity: 0.3;
+          }
+          @keyframes fadeIn {
+            from {
+              opacity: 0;
+            }
+            to {
+              opacity: 1;
+            }
           }
         `}</style>
 
@@ -197,7 +239,7 @@ export default function AttendanceCalendar() {
         </div>
 
         {/* Stats Row */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-8 pt-6 border-t border-cyan-500/20">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-8 pt-6 border-t border-cyan-500/20 animate-fade-in">
           <div className="text-center">
             <p className="text-emerald-400 text-2xl font-bold">
               {Object.values(attendanceData).filter(Boolean).length}
@@ -223,7 +265,7 @@ export default function AttendanceCalendar() {
       </div>
 
       {/* Mark Attendance Button */}
-      <div className="backdrop-blur-xl bg-black/40 border border-emerald-500/20 rounded-2xl p-6 hover:border-emerald-500/40 transition-smooth">
+      <div className="backdrop-blur-xl bg-black/40 border border-emerald-500/20 rounded-2xl p-6 hover:border-emerald-500/40 transition-smooth animate-fade-in">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           <div>
             <p className="text-white font-semibold mb-1">Today's Attendance</p>
@@ -242,7 +284,7 @@ export default function AttendanceCalendar() {
           >
             {isMarking ? (
               <span className="flex items-center gap-2">
-                <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
                 Marking...
@@ -257,7 +299,7 @@ export default function AttendanceCalendar() {
 
         {message && (
           <div
-            className={`mt-4 p-3 rounded-lg text-sm font-semibold text-center ${
+            className={`mt-4 p-3 rounded-lg text-sm font-semibold text-center animate-fade-in ${
               message.includes('✅')
                 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                 : 'bg-red-500/20 text-red-300 border border-red-500/30'
