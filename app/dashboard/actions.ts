@@ -105,3 +105,20 @@ export async function hasMarkedAttendanceToday(studentId: number): Promise<boole
 
   return !!data && !error;
 }
+
+export async function getSubscriptionData(studentId: number) {
+  const supabase = await createServerClient();
+
+  const { data: subscriptions, error } = await supabase
+    .from('subscriptions')
+    .select('id, started_at, expires_at, payment_method, status')
+    .eq('student_id', studentId);
+
+  if (error) {
+    console.error('Subscription fetch error:', error);
+    return [];
+  }
+
+  console.log('Fetched subscriptions for student:', studentId, subscriptions);
+  return subscriptions || [];
+}

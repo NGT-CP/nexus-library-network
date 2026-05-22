@@ -4,12 +4,12 @@ import { useState, useEffect } from 'react';
 import { DayPicker } from 'react-day-picker';
 import { format, getYear, getMonth } from 'date-fns';
 import 'react-day-picker/dist/style.css';
-import { getAttendanceRecords, markAttendanceToday, hasMarkedAttendanceToday } from './actions';
+import { getAttendanceRecords, markAttendanceToday, hasMarkedAttendanceToday, getSubscriptionData, getStudentSession, getStudentData } from './actions';
 
 export default function AttendanceCalendar() {
   const [attendanceData, setAttendanceData] = useState<Record<string, boolean>>({});
+  const [subscriptionDates, setSubscriptionDates] = useState<Record<string, string>>({});
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [loading, setLoading] = useState(true);
   const [markedToday, setMarkedToday] = useState(false);
   const [isMarking, setIsMarking] = useState(false);
   const [message, setMessage] = useState('');
@@ -17,20 +17,43 @@ export default function AttendanceCalendar() {
 
   // Initialize student ID
   useEffect(() => {
-    setStudentId(1);
+    const fetchStudentId = async () => {
+      const session = await getStudentSession();
+      if (session && session.user.email) {
+        // Extract phone from email (format: {phone}@student.local)
+        const phone = session.user.email.replace('@student.local', '');
+        console.log('Extracted phone from email:', phone);
+
+        const student = await getStudentData(phone);
+        if (student) {
+          console.log('Student found:', student.id, student.name, student.phone);
+          setStudentId(student.id);
+        } else {
+          console.error('No student found for phone:', phone);
+        }
+      } else {
+        console.error('No email in session');
+      }
+    };
+    fetchStudentId();
   }, []);
 
-  // Fetch attendance data on month change (no full page reload)
+  // Fetch attendance data on month change
   useEffect(() => {
     if (!studentId) return;
 
     const fetchData = async () => {
-      setLoading(true);
       const year = getYear(selectedDate);
       const month = getMonth(selectedDate);
 
       try {
-        const records = await getAttendanceRecords(studentId, year, month);
+        const year = getYear(selectedDate);
+        const month = getMonth(selectedDate);
+
+        const [records, subscriptions] = await Promise.all([
+          getAttendanceRecords(studentId, year, month),
+          getSubscriptionData(studentId),
+        ]);
 
         // Build attendance map
         const attendanceMap: Record<string, boolean> = {};
@@ -40,17 +63,33 @@ export default function AttendanceCalendar() {
             format(new Date(record.created_at), 'yyyy-MM-dd');
           attendanceMap[dateStr] = true;
         });
-
         setAttendanceData(attendanceMap);
+
+        // Build subscription dates map
+        const subDatesMap: Record<string, string> = {};
+        subscriptions.forEach((sub: any) => {
+          // Mark subscription/trial START date in BLUE
+          if (sub.started_at) {
+            const startDateStr = sub.started_at.split('T')[0];
+            subDatesMap[startDateStr] = 'start_date';
+            console.log('Subscription start date (BLUE):', startDateStr, sub.payment_method);
+          }
+          // Mark subscription/trial END date in RED
+          if (sub.expires_at) {
+            const endDateStr = sub.expires_at.split('T')[0];
+            subDatesMap[endDateStr] = 'end_date';
+            console.log('Subscription end date (RED):', endDateStr, sub.payment_method);
+          }
+        });
+        console.log('Final subscription dates map:', subDatesMap);
+        setSubscriptionDates(subDatesMap);
 
         // Check if marked today
         const hasMarked = await hasMarkedAttendanceToday(studentId);
         setMarkedToday(hasMarked);
       } catch (error) {
-        console.error('Error fetching attendance:', error);
+        console.error('Error fetching data:', error);
       }
-
-      setLoading(false);
     };
 
     fetchData();
@@ -91,6 +130,25 @@ export default function AttendanceCalendar() {
     return attendanceData[dateStr];
   };
 
+  const getSubscriptionEventType = (date: Date) => {
+    const dateStr = format(date, 'yyyy-MM-dd');
+    return subscriptionDates[dateStr];
+  };
+
+  const isSubscriptionEvent = (date: Date) => {
+    return !!getSubscriptionEventType(date);
+  };
+
+  const isPurchaseOrTrial = (date: Date) => {
+    const type = getSubscriptionEventType(date);
+    return type === 'start_date';
+  };
+
+  const isSubscriptionEndpoint = (date: Date) => {
+    const type = getSubscriptionEventType(date);
+    return type === 'end_date';
+  };
+
   const isToday = (date: Date) => {
     const today = new Date();
     return (
@@ -111,15 +169,17 @@ export default function AttendanceCalendar() {
     present: (date: Date) => isDayPresent(date),
     today: (date: Date) => isToday(date),
     future: (date: Date) => isFutureDate(date),
+    purchaseOrTrial: (date: Date) => isPurchaseOrTrial(date),
+    subscriptionEndpoint: (date: Date) => isSubscriptionEndpoint(date),
   };
 
   const modifiersStyles = {
     present: {
-      backgroundColor: 'rgba(16, 185, 129, 0.3)',
+      backgroundColor: 'rgba(34, 197, 94, 0.3)',
       borderRadius: '8px',
       fontWeight: 'bold',
-      color: '#10b981',
-      border: '2px solid rgb(16, 185, 129)',
+      color: '#22c55e',
+      border: '2px solid rgb(34, 197, 94)',
     },
     today: {
       backgroundColor: 'rgba(34, 197, 94, 0.4)',
@@ -131,16 +191,21 @@ export default function AttendanceCalendar() {
       opacity: 0.4,
       color: 'rgb(107, 114, 128)',
     },
+    purchaseOrTrial: {
+      backgroundColor: 'rgba(34, 197, 94, 0.3)',
+      borderRadius: '8px',
+      fontWeight: 'bold',
+      color: '#22c55e',
+      border: '2px solid rgb(34, 197, 94)',
+    },
+    subscriptionEndpoint: {
+      backgroundColor: 'rgba(239, 68, 68, 0.3)',
+      borderRadius: '8px',
+      fontWeight: 'bold',
+      color: '#ef4444',
+      border: '2px solid rgb(239, 68, 68)',
+    },
   };
-
-  if (loading) {
-    return (
-      <div className="backdrop-blur-xl bg-black/40 border border-cyan-500/20 rounded-2xl p-12 text-center animate-fade-in">
-        <div className="w-8 h-8 rounded-full border-2 border-cyan-400 border-r-transparent mx-auto mb-3 opacity-60"></div>
-        <p className="text-cyan-300 text-sm">Loading attendance data...</p>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
@@ -148,10 +213,6 @@ export default function AttendanceCalendar() {
       <div className="backdrop-blur-xl bg-black/40 border border-cyan-500/20 rounded-2xl p-8 hover:border-cyan-500/40 transition-smooth animate-fade-in">
         <div className="mb-6">
           <h2 className="text-xl font-bold text-cyan-300 mb-2">Attendance Calendar</h2>
-          <p className="text-gray-400 text-sm">
-            {format(selectedDate, 'MMMM yyyy')} — Click on dates to view
-            attendance status
-          </p>
         </div>
 
         {/* Calendar Widget */}
@@ -210,37 +271,13 @@ export default function AttendanceCalendar() {
         </div>
 
         {/* Stats Row */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-8 pt-6 border-t border-cyan-500/20 animate-fade-in">
+        <div className="grid grid-cols-1 gap-3 mt-8 pt-6 border-t border-cyan-500/20 animate-fade-in">
           <div className="text-center">
             <p className="text-emerald-400 text-2xl font-bold">
               {Object.values(attendanceData).filter(Boolean).length}
             </p>
             <p className="text-gray-400 text-xs uppercase tracking-widest font-semibold mt-1">
-              Present Days
-            </p>
-          </div>
-          <div className="text-center">
-            <p className="text-cyan-400 text-2xl font-bold">
-              {new Date().getDate() -
-                Object.values(attendanceData).filter(Boolean).length}
-            </p>
-            <p className="text-gray-400 text-xs uppercase tracking-widest font-semibold mt-1">
-              Absent Days
-            </p>
-          </div>
-          <div className="text-center col-span-2 sm:col-span-1">
-            <p className="text-orange-400 text-2xl font-bold">
-              {Object.values(attendanceData).filter(Boolean).length > 0
-                ? (
-                    (Object.values(attendanceData).filter(Boolean).length /
-                      new Date().getDate()) *
-                    100
-                  ).toFixed(0)
-                : 0}
-              %
-            </p>
-            <p className="text-gray-400 text-xs uppercase tracking-widest font-semibold mt-1">
-              Attendance Rate
+              Days Present
             </p>
           </div>
         </div>
