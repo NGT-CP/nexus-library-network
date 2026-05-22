@@ -1,17 +1,12 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { DayPicker } from 'react-day-picker';
 import { format, getYear, getMonth } from 'date-fns';
 import 'react-day-picker/dist/style.css';
 import { getAttendanceRecords, markAttendanceToday, hasMarkedAttendanceToday } from './actions';
-import { useSearchParams } from 'next/navigation';
 
 export default function AttendanceCalendar() {
-  const searchParams = useSearchParams();
-  const studentIdParam = searchParams?.get('student_id');
-  const wsRef = useRef<WebSocket | null>(null);
-
   const [attendanceData, setAttendanceData] = useState<Record<string, boolean>>({});
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [loading, setLoading] = useState(true);
@@ -20,48 +15,12 @@ export default function AttendanceCalendar() {
   const [message, setMessage] = useState('');
   const [studentId, setStudentId] = useState<number | null>(null);
 
-  // Initialize WebSocket for live updates
-  useEffect(() => {
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const wsUrl = `${wsProtocol}://${window.location.host}/api/attendance-ws`;
-
-    try {
-      wsRef.current = new WebSocket(wsUrl);
-
-      wsRef.current.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'attendance-update') {
-            setAttendanceData((prev) => ({
-              ...prev,
-              [data.date]: true,
-            }));
-          }
-        } catch (error) {
-          console.error('WebSocket message error:', error);
-        }
-      };
-
-      wsRef.current.onerror = (error) => {
-        console.error('WebSocket error:', error);
-      };
-    } catch (error) {
-      console.error('WebSocket connection failed:', error);
-    }
-
-    return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
-    };
-  }, []);
-
-  // Get student ID from session
+  // Initialize student ID
   useEffect(() => {
     setStudentId(1);
   }, []);
 
-  // Fetch attendance without full page reload on month change
+  // Fetch attendance data on month change (no full page reload)
   useEffect(() => {
     if (!studentId) return;
 
@@ -70,20 +29,26 @@ export default function AttendanceCalendar() {
       const year = getYear(selectedDate);
       const month = getMonth(selectedDate);
 
-      const records = await getAttendanceRecords(studentId, year, month);
+      try {
+        const records = await getAttendanceRecords(studentId, year, month);
 
-      // Build attendance map
-      const attendanceMap: Record<string, boolean> = {};
-      records.forEach((record: any) => {
-        const dateStr = record['attendance-date'] || format(new Date(record.created_at), 'yyyy-MM-dd');
-        attendanceMap[dateStr] = true;
-      });
+        // Build attendance map
+        const attendanceMap: Record<string, boolean> = {};
+        records.forEach((record: any) => {
+          const dateStr =
+            record['attendance-date'] ||
+            format(new Date(record.created_at), 'yyyy-MM-dd');
+          attendanceMap[dateStr] = true;
+        });
 
-      setAttendanceData(attendanceMap);
+        setAttendanceData(attendanceMap);
 
-      // Check if marked today
-      const hasMarked = await hasMarkedAttendanceToday(studentId);
-      setMarkedToday(hasMarked);
+        // Check if marked today
+        const hasMarked = await hasMarkedAttendanceToday(studentId);
+        setMarkedToday(hasMarked);
+      } catch (error) {
+        console.error('Error fetching attendance:', error);
+      }
 
       setLoading(false);
     };
@@ -97,20 +62,25 @@ export default function AttendanceCalendar() {
     setIsMarking(true);
     setMessage('');
 
-    const result = await markAttendanceToday(studentId);
+    try {
+      const result = await markAttendanceToday(studentId);
 
-    if (result.success) {
-      setMarkedToday(true);
-      setMessage('✅ Attendance marked successfully!');
+      if (result.success) {
+        setMarkedToday(true);
+        setMessage('✅ Attendance marked successfully!');
 
-      // Update locally without reload
-      const today = format(new Date(), 'yyyy-MM-dd');
-      setAttendanceData((prev) => ({
-        ...prev,
-        [today]: true,
-      }));
-    } else {
-      setMessage(`❌ ${result.error}`);
+        // Update locally without reload
+        const today = format(new Date(), 'yyyy-MM-dd');
+        setAttendanceData((prev) => ({
+          ...prev,
+          [today]: true,
+        }));
+      } else {
+        setMessage(`❌ ${result.error}`);
+      }
+    } catch (error) {
+      setMessage('❌ Error marking attendance');
+      console.error('Error:', error);
     }
 
     setIsMarking(false);
@@ -179,7 +149,8 @@ export default function AttendanceCalendar() {
         <div className="mb-6">
           <h2 className="text-xl font-bold text-cyan-300 mb-2">Attendance Calendar</h2>
           <p className="text-gray-400 text-sm">
-            {format(selectedDate, 'MMMM yyyy')} — Click on dates to view attendance status
+            {format(selectedDate, 'MMMM yyyy')} — Click on dates to view
+            attendance status
           </p>
         </div>
 
@@ -244,22 +215,33 @@ export default function AttendanceCalendar() {
             <p className="text-emerald-400 text-2xl font-bold">
               {Object.values(attendanceData).filter(Boolean).length}
             </p>
-            <p className="text-gray-400 text-xs uppercase tracking-widest font-semibold mt-1">Present Days</p>
+            <p className="text-gray-400 text-xs uppercase tracking-widest font-semibold mt-1">
+              Present Days
+            </p>
           </div>
           <div className="text-center">
             <p className="text-cyan-400 text-2xl font-bold">
-              {new Date().getDate() - Object.values(attendanceData).filter(Boolean).length}
+              {new Date().getDate() -
+                Object.values(attendanceData).filter(Boolean).length}
             </p>
-            <p className="text-gray-400 text-xs uppercase tracking-widest font-semibold mt-1">Absent Days</p>
+            <p className="text-gray-400 text-xs uppercase tracking-widest font-semibold mt-1">
+              Absent Days
+            </p>
           </div>
           <div className="text-center col-span-2 sm:col-span-1">
             <p className="text-orange-400 text-2xl font-bold">
               {Object.values(attendanceData).filter(Boolean).length > 0
-                ? ((Object.values(attendanceData).filter(Boolean).length / new Date().getDate()) * 100).toFixed(0)
+                ? (
+                    (Object.values(attendanceData).filter(Boolean).length /
+                      new Date().getDate()) *
+                    100
+                  ).toFixed(0)
                 : 0}
               %
             </p>
-            <p className="text-gray-400 text-xs uppercase tracking-widest font-semibold mt-1">Attendance Rate</p>
+            <p className="text-gray-400 text-xs uppercase tracking-widest font-semibold mt-1">
+              Attendance Rate
+            </p>
           </div>
         </div>
       </div>
@@ -270,7 +252,9 @@ export default function AttendanceCalendar() {
           <div>
             <p className="text-white font-semibold mb-1">Today's Attendance</p>
             <p className="text-gray-400 text-sm">
-              {markedToday ? '✅ Already marked for today' : 'Mark your attendance for today'}
+              {markedToday
+                ? '✅ Already marked for today'
+                : 'Mark your attendance for today'}
             </p>
           </div>
           <button
@@ -284,8 +268,18 @@ export default function AttendanceCalendar() {
           >
             {isMarking ? (
               <span className="flex items-center gap-2">
-                <svg className="w-4 h-4 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                <svg
+                  className="w-4 h-4 opacity-60"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                  />
                 </svg>
                 Marking...
               </span>
